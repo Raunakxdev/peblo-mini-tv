@@ -1,8 +1,19 @@
+
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const shows = [
+type Show = {
+  id?: number;
+  title: string;
+  info: string;
+  description: string;
+  image: string;
+};
+
+const API = "http://127.0.0.1:8000";
+
+const defaultShows: Show[] = [
   {
     title: "Panchayat",
     info: "Comedy • Drama • Hindi",
@@ -75,20 +86,104 @@ function Home() {
   const [theme, setTheme] = useState("dark");
   const [activeIcon, setActiveIcon] = useState(1);
   const [openCard, setOpenCard] = useState<string | null>(null);
+  const [shows, setShows] = useState<Show[]>(defaultShows);
 
+  // Fetch shows from the backend.
+  useEffect(() => {
+    const loadShows = async () => {
+      try {
+        const response = await fetch(`${API}/shows`);
+
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!Array.isArray(data)) {
+          throw new Error("The /shows API did not return a list.");
+        }
+
+        const apiShows: Show[] = data.map((item: any) => {
+          const fallback = defaultShows.find(
+            (show) =>
+              show.title.toLowerCase() ===
+              String(item.title ?? "").toLowerCase()
+          );
+
+          return {
+            id: item.id,
+            title: item.title,
+            info:
+              [item.category, item.language]
+                .filter(Boolean)
+                .join(" • ") ||
+              fallback?.info ||
+              "Hindi",
+            description:
+              item.description ||
+              fallback?.description ||
+              "Discover this show on Peblo.",
+            image: item.image || item.poster_url || fallback?.image ||
+              defaultShows[0].image,
+          };
+        });
+
+        // Keep the original five shows and add/update CMS shows.
+        setShows((currentShows) => {
+          const merged = [...currentShows];
+
+          apiShows.forEach((apiShow) => {
+            const index = merged.findIndex(
+              (show) =>
+                show.title.toLowerCase() ===
+                apiShow.title.toLowerCase()
+            );
+
+            if (index !== -1) {
+              merged[index] = apiShow;
+            } else {
+              merged.push(apiShow);
+            }
+          });
+
+          return merged;
+        });
+
+        console.log("Shows received from CMS API:", apiShows);
+      } catch (error) {
+        console.error("Could not load shows from backend:", error);
+      }
+    };
+
+    loadShows();
+  }, []);
+
+  // Keep the carousel index valid when the number of shows changes.
+  useEffect(() => {
+    if (active >= shows.length) {
+      setActive(0);
+    }
+  }, [active, shows.length]);
+
+  // Automatically change the hero show.
   useEffect(() => {
     const timer = setInterval(() => {
       setActive((current) => (current + 1) % shows.length);
     }, 4500);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [shows.length]);
 
-  const hero = shows[active];
+  const hero = shows[active] ?? shows[0];
 
-  const goNext = () => setActive((current) => (current + 1) % shows.length);
-  const goPrev = () =>
+  const goNext = () => {
+    setActive((current) => (current + 1) % shows.length);
+  };
+
+  const goPrev = () => {
     setActive((current) => (current - 1 + shows.length) % shows.length);
+  };
 
   const toggleCard = (id: string) => {
     setOpenCard((current) => (current === id ? null : id));
@@ -117,11 +212,11 @@ function Home() {
         </div>
 
         <nav>
-  <Link to="/">Home</Link>
-  <Link to="/shows">Shows</Link>
-  <Link to="/movies">Movies</Link>
-  <Link to="/categories">Categories</Link>
-</nav>
+          <Link to="/">Home</Link>
+          <Link to="/shows">Shows</Link>
+          <Link to="/movies">Movies</Link>
+          <Link to="/categories">Categories</Link>
+        </nav>
 
         <div className="nav-actions">
           <button className="icon-btn">⌕</button>
@@ -153,7 +248,7 @@ function Home() {
 
           <div className="hero-overlay" />
 
-          <div className="hero-content" key={active}>
+          <div className="hero-content" key={hero.title}>
             <p className="eyebrow">PEBLO ORIGINAL</p>
             <h1>{hero.title}</h1>
             <p className="hero-info">{hero.info}</p>
@@ -165,76 +260,100 @@ function Home() {
             </div>
           </div>
 
-          <button className="hero-nav hero-prev" onClick={goPrev} aria-label="Previous">
+          <button
+            className="hero-nav hero-prev"
+            onClick={goPrev}
+            aria-label="Previous"
+          >
             <span className="chevron chevron-left" />
           </button>
-          <button className="hero-nav hero-next" onClick={goNext} aria-label="Next">
+
+          <button
+            className="hero-nav hero-next"
+            onClick={goNext}
+            aria-label="Next"
+          >
             <span className="chevron chevron-right" />
           </button>
 
           <div className="slider-dots">
-            {shows.map((_, index) => (
+            {shows.map((show, index) => (
               <button
-                key={index}
+                key={show.title}
                 className={index === active ? "dot active-dot" : "dot"}
                 onClick={() => setActive(index)}
+                aria-label={`Show ${show.title}`}
               />
             ))}
           </div>
         </section>
 
         <section className="content">
-          {rows.map((row) => (
-            <div className="row" key={row.title}>
-              <div className="row-heading">
-                <h2>{row.title}</h2>
-                <span>View all →</span>
-              </div>
+          {rows.map((row) => {
+            const allNames = [
+              ...row.items,
+              ...shows
+                .map((show) => show.title)
+                .filter((name) => !row.items.includes(name)),
+            ];
 
-              <div className="cards">
-                {row.items.map((name, index) => {
-                  const show = shows.find((item) => item.title === name);
-                  const cardId = `${row.title}-${name}`;
-                  const isOpen = openCard === cardId;
+            return (
+              <div className="row" key={row.title}>
+                <div className="row-heading">
+                  <h2>{row.title}</h2>
+                  <span>View all →</span>
+                </div>
 
-                  return (
-                    <article
-                      className={`card ${isOpen ? "card-open" : ""}`}
-                      key={cardId}
-                      onMouseEnter={() => setOpenCard(cardId)}
-                      onMouseLeave={() =>
-                        setOpenCard((current) =>
-                          current === cardId ? null : current
-                        )
-                      }
-                      onClick={() => toggleCard(cardId)}
-                    >
-                      <img
-                        src={
-                          show?.image ||
-                          shows[index % shows.length].image
+                <div className="cards">
+                  {allNames.map((name, index) => {
+                    const show = shows.find(
+                      (item) => item.title === name
+                    );
+
+                    const cardId = `${row.title}-${name}`;
+                    const isOpen = openCard === cardId;
+
+                    return (
+                      <article
+                        className={`card ${isOpen ? "card-open" : ""}`}
+                        key={cardId}
+                        onMouseEnter={() => setOpenCard(cardId)}
+                        onMouseLeave={() =>
+                          setOpenCard((current) =>
+                            current === cardId ? null : current
+                          )
                         }
-                        alt={name}
-                      />
+                        onClick={() => toggleCard(cardId)}
+                      >
+                        <img
+                          src={
+                            show?.image ||
+                            shows[index % shows.length].image
+                          }
+                          alt={name}
+                        />
 
-                      <div className="card-overlay">
-                        <h3>{name}</h3>
-                        <p className="card-info">{show?.info}</p>
+                        <div className="card-overlay">
+                          <h3>{name}</h3>
+                          <p className="card-info">{show?.info}</p>
 
-                        <p className="card-description">
-                          {show?.description}
-                        </p>
+                          <p className="card-description">
+                            {show?.description}
+                          </p>
 
-                        <div className="card-buttons">
-                          <button className="card-watch">▶ Watch</button>
+                          <div className="card-buttons">
+                            <button className="card-watch">
+                              ▶ Watch
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                      </article>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       </main>
     </div>

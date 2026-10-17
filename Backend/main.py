@@ -1,24 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 conn = psycopg2.connect(
-    host="localhost",
-    database="peblo_tv",
-    user="postgres",
-    password="Raunak763@"
+    host=os.getenv("DB_HOST", "localhost"),
+    database=os.getenv("DB_NAME", "peblo_tv"),
+    user=os.getenv("DB_USER", "postgres"),
+    password=os.getenv("DB_PASSWORD")
 )
 
 @app.get("/")
